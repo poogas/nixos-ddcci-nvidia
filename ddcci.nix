@@ -22,7 +22,7 @@ in
 
       wantedBy = [ "display-manager.service" ];
       after = [ "display-manager.service" ];
-      
+
       path = [ pkgs.kmod ];
 
       serviceConfig = {
@@ -32,32 +32,33 @@ in
           ddcciSetupScript = pkgs.writeShellScript "ddcci-setup" ''
             #! ${pkgs.bash}/bin/bash
             set -e
-
             modprobe ddcci-backlight || true
 
-            echo "Waiting for I2C devices..."
-            
+            echo "Waiting for NVIDIA I2C buses to become available..."
+
             for i in $(seq 1 15); do
               if ${lib.getExe pkgs.ddcutil} --disable-dynamic-sleep detect 2>/dev/null | ${lib.getExe pkgs.ripgrep} -q '/dev/i2c-'; then
-                echo "I2C devices found."
+                echo "I2C buses are ready."
                 break
               fi
               if [ $i -eq 15 ]; then
-                echo "Timed out waiting for I2C devices. Exiting."
+                echo "Timed out waiting for I2C buses. Aborting."
                 exit 1
               fi
               sleep 2
             done
 
-            echo "Probing and recreating DDCCI devices..."
+            echo "Forcibly recreating DDCCI devices to fix kernel probe failures..."
+
             ${lib.getExe pkgs.ddcutil} --disable-dynamic-sleep detect | ${lib.getExe pkgs.ripgrep} -o 'I2C bus.*(/dev/i2c-\d+)' --replace '$1' | while read dev; do
               bus_path=$(basename "$dev")
-              echo "Re-creating DDCCI device on ''${bus_path}"
-              echo 0x37 > "/sys/bus/i2c/devices/''${bus_path}/delete_device" || true
-              sleep 2
+              echo "Re-creating device on ''${bus_path}..."
+              echo 0x37 > "/sys/bus/i2c/devices/''${bus_path}/delete_device" 2>/dev/null || true
+              sleep 0.1
               echo ddcci 0x37 > "/sys/bus/i2c/devices/''${bus_path}/new_device"
             done
-            echo "DDCCI setup finished."
+
+            echo "DDCCI setup finished successfully."
           '';
         in "${ddcciSetupScript}";
       };
